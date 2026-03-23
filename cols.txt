@@ -1,5 +1,0 @@
-fake_news_1 columns: ['Unnamed: 0', 'title', 'text', 'label']
-fake_news_2_fake columns: ['title', 'text', 'subject', 'date']
-fake_news_3 columns: ['title', 'news_url', 'source_domain', 'tweet_num', 'real']
-fake_news_4_fake columns: ['title', 'text', 'subject', 'date']
-fake_news_4_true columns: ['title', 'text', 'subject', 'date']

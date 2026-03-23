@@ -109,56 +109,79 @@ def solve_dataset_logic(file_path):
         return None
 
 def main():
-    print("🚀 Starting Dynamic Training Sequence...")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    models_dir = os.path.join(base_dir, 'models')
+    data_dir = os.path.join(base_dir, 'data')
+    model_path = os.path.join(models_dir, 'best_model.pkl')
+    vec_path = os.path.join(models_dir, 'tfidf_vectorizer.pkl')
+    master_csv_path = os.path.join(data_dir, 'master_dataset.csv')
     
-    base_data_path = r"C:\Users\harsh_2pgm3oe\OneDrive\Documents\Coding\All Docs\Fake News"
-    user_feed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'user_feedback.csv')
-    
-    all_dfs = []
-    
-    # 1. Scan Main Datasets
-    print(f"Scanning directory: {base_data_path}")
-    for root, dirs, files in os.walk(base_data_path):
-        for file in files:
-            if file.endswith('.csv'):
-                fpath = os.path.join(root, file)
-                print(f" -> Found: {file}")
-                df = solve_dataset_logic(fpath)
-                if df is not None:
-                    all_dfs.append(df)
-                    print(f"    Loaded {len(df)} records.")
-                    
-    # 2. Scan User Feedback
-    if os.path.exists(user_feed_path):
-        print("Found user feedback. Integrating...")
-        try:
-            df_feed = pd.read_csv(user_feed_path)
-            all_dfs.append(df_feed)
-            print(f"    Loaded {len(df_feed)} corrected samples.")
-        except Exception as e:
-            print(f"Error loading feedback: {e}")
+    os.makedirs(models_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
 
-    if not all_dfs:
-        print("❌ No datasets found! Please check your file paths.")
+    if os.path.exists(model_path) and os.path.exists(vec_path):
+        print(f"✅ Models already exist in {models_dir}. Skipping training. Delete them to retrain.")
+        print("🌐 Launching Web Interface...")
+        subprocess.run([sys.executable, "-m", "streamlit", "run", os.path.join(base_dir, 'app', 'app.py')])
         return
 
-    print("Concatenating and cleaning data...")
-    df_master = pd.concat(all_dfs, ignore_index=True)
+    print("🚀 Starting Dynamic Training Sequence...")
     
-    # Normalize labels: Ensure all are int (0 or 1)
-    # Handle cases where labels might be 'REAL'/'FAKE' strings or int/str 0/1
-    label_map = {
-        'REAL': 1, 'FAKE': 0, 'real': 1, 'fake': 0, 
-        'TRUE': 1, 'FALSE': 0, 'true': 1, 'false': 0,
-        '1': 1, '0': 0, 1: 1, 0: 0
-    }
-    df_master['label'] = df_master['label'].map(label_map).fillna(df_master['label'])
-    df_master['label'] = pd.to_numeric(df_master['label'], errors='coerce')
-    df_master = df_master.dropna(subset=['label'])
-    df_master['label'] = df_master['label'].astype(int)
+    if os.path.exists(master_csv_path):
+        print(f"Loading pre-concatenated dataset from {master_csv_path}...")
+        df_master = pd.read_csv(master_csv_path)
+    else:
+        base_data_path = r"C:\Users\harsh_2pgm3oe\OneDrive\Documents\Coding\All Docs\Fake News"
+        user_feed_path = os.path.join(data_dir, 'user_feedback.csv')
+        
+        all_dfs = []
+        
+        # 1. Scan Main Datasets
+        print(f"Scanning directory: {base_data_path}")
+        for root, dirs, files in os.walk(base_data_path):
+            for file in files:
+                if file.endswith('.csv'):
+                    fpath = os.path.join(root, file)
+                    print(f" -> Found: {file}")
+                    df = solve_dataset_logic(fpath)
+                    if df is not None:
+                        all_dfs.append(df)
+                        print(f"    Loaded {len(df)} records.")
+                        
+        # 2. Scan User Feedback
+        if os.path.exists(user_feed_path):
+            print("Found user feedback. Integrating...")
+            try:
+                df_feed = pd.read_csv(user_feed_path)
+                all_dfs.append(df_feed)
+                print(f"    Loaded {len(df_feed)} corrected samples.")
+            except Exception as e:
+                print(f"Error loading feedback: {e}")
     
-    df_master['text'] = df_master['text'].astype(str).apply(wordopt)
-    df_master = df_master[df_master['text'].str.strip() != '']
+        if not all_dfs:
+            print("❌ No datasets found! Please check your file paths.")
+            return
+    
+        print("Concatenating and cleaning data...")
+        df_master = pd.concat(all_dfs, ignore_index=True)
+        
+        # Normalize labels: Ensure all are int (0 or 1)
+        # Handle cases where labels might be 'REAL'/'FAKE' strings or int/str 0/1
+        label_map = {
+            'REAL': 1, 'FAKE': 0, 'real': 1, 'fake': 0, 
+            'TRUE': 1, 'FALSE': 0, 'true': 1, 'false': 0,
+            '1': 1, '0': 0, 1: 1, 0: 0
+        }
+        df_master['label'] = df_master['label'].map(label_map).fillna(df_master['label'])
+        df_master['label'] = pd.to_numeric(df_master['label'], errors='coerce')
+        df_master = df_master.dropna(subset=['label'])
+        df_master['label'] = df_master['label'].astype(int)
+        
+        df_master['text'] = df_master['text'].astype(str).apply(wordopt)
+        df_master = df_master[df_master['text'].str.strip() != '']
+        
+        print(f"Saving concatenated dataset to {master_csv_path}...")
+        df_master.to_csv(master_csv_path, index=False)
     
     # Balance & Sample
     print(f"Total processed records: {len(df_master)}")
@@ -187,10 +210,12 @@ def main():
     print(f"✅ Training Complete. Accuracy: {acc:.4f}")
     
     # Save
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    joblib.dump(model, os.path.join(base_dir, 'best_model.pkl'))
-    joblib.dump(vectorizer, os.path.join(base_dir, 'tfidf_vectorizer.pkl'))
-    print(f"🏆 Model & Vectorizer updated in {base_dir}")
+    joblib.dump(model, model_path)
+    joblib.dump(vectorizer, vec_path)
+    print(f"🏆 Model & Vectorizer updated in {models_dir}")
+
+    print("🌐 Launching Web Interface...")
+    subprocess.run([sys.executable, "-m", "streamlit", "run", os.path.join(base_dir, 'app', 'app.py')])
 
 if __name__ == "__main__":
     main()

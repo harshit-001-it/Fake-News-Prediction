@@ -224,13 +224,58 @@ else:
     with tab2:
         st.markdown("### Upload Document")
         up_file = st.file_uploader("Upload .txt or .csv", type=["txt", "csv"])
+        
         if st.button("Analyze File") and up_file:
-            text = up_file.read().decode('utf-8') if up_file.name.endswith('.txt') else pd.read_csv(up_file).to_string()
-            cleaned = wordopt(text)
-            pred = model.predict(vectorizer.transform([cleaned]))[0]
-            if pred == 1: st.success("✅ REAL")
-            else: st.error("🚨 FAKE")
-            if st.button("🚩 Incorrect?"): save_feedback(text, 1-pred)
+            st.session_state['analyzed_file'] = True
+            
+            with st.spinner("Processing file..."):
+                if up_file.name.endswith('.txt'):
+                    text = up_file.read().decode('utf-8')
+                    cleaned = wordopt(text)
+                    pred = model.predict(vectorizer.transform([cleaned]))[0]
+                    st.session_state['single_pred'] = pred
+                    st.session_state['single_text'] = text
+                    st.session_state['is_csv'] = False
+                else:
+                    try:
+                        df = pd.read_csv(up_file)
+                        st.session_state['is_csv'] = True
+                        text_col = next((c for c in df.columns if 'text' in c.lower() or 'title' in c.lower()), None)
+                        if not text_col:
+                            st.error("CSV must contain a 'text' or 'title' column.")
+                            st.session_state['batch_df'] = None
+                        else:
+                            cleaned_texts = df[text_col].astype(str).apply(wordopt)
+                            vecs = vectorizer.transform(cleaned_texts)
+                            preds = model.predict(vecs)
+                            df['Prediction'] = ['REAL' if p == 1 else 'FAKE' for p in preds]
+                            if hasattr(model, "predict_proba"):
+                                df['Confidence (%)'] = [round(max(prob) * 100, 2) for prob in model.predict_proba(vecs)]
+                            st.session_state['batch_df'] = df
+                    except Exception as e:
+                        st.error(f"Error parsing CSV: {e}")
+                        st.session_state.pop('analyzed_file', None)
+
+        if st.session_state.get('analyzed_file'):
+            if not st.session_state.get('is_csv'):
+                pred = st.session_state.get('single_pred')
+                if pred == 1: st.success("✅ REAL")
+                else: st.error("🚨 FAKE")
+                if st.button("🚩 Incorrect?"): 
+                    save_feedback(st.session_state['single_text'], 1-pred)
+                    st.info("Feedback Saved!")
+                    st.session_state['analyzed_file'] = False
+            else:
+                df = st.session_state.get('batch_df')
+                if df is not None:
+                    st.success("✅ Batch Analysis Complete!")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Total Records", len(df))
+                    c2.metric("REAL News", len(df[df['Prediction'] == 'REAL']))
+                    c3.metric("FAKE News", len(df[df['Prediction'] == 'FAKE']))
+                    st.dataframe(df.head(100))
+                    csv_data = df.to_csv(index=False).encode('utf-8')
+                    st.download_button("Download Full Results", data=csv_data, file_name='analyzed_results.csv', mime='text/csv')
 
     with tab3:
         st.markdown("### Live Feed (Webz.io)")
@@ -238,13 +283,23 @@ else:
         else:
             if st.button("Fetch News"):
                 st.session_state.news = fetch_webzio_news(webzio_key)
+                st.session_state.pop('live_analysis', None)
+                
             if 'news' in st.session_state:
+                if 'live_analysis' not in st.session_state:
+                    st.session_state.live_analysis = {}
+                
                 for idx, post in enumerate(st.session_state.news):
                     with st.expander(post['title']):
                         st.write(post['text'][:500] + "...")
-                        if st.button(f"Analyze #{idx}"):
+                        if st.button("Analyze", key=f"analyze_{idx}"):
                             p = model.predict(vectorizer.transform([wordopt(post['text'])]))[0]
-                            st.write("Result: **REAL**" if p == 1 else "Result: **FAKE**")
+                            st.session_state.live_analysis[idx] = "REAL" if p == 1 else "FAKE"
+                            
+                        if idx in st.session_state.live_analysis:
+                            p_text = st.session_state.live_analysis[idx]
+                            color = "#10b981" if p_text == "REAL" else "#ef4444"
+                            st.markdown(f"**Result:** <span style='color:{color}; font-weight:bold;'>{p_text}</span>", unsafe_allow_html=True)
 
 if __name__ == '__main__':
     try:

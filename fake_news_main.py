@@ -20,7 +20,8 @@ def ensure_dependencies():
         'numpy': 'numpy',
         'joblib': 'joblib',
         'sklearn': 'scikit-learn',
-        'requests': 'requests'
+        'requests': 'requests',
+        'streamlit': 'streamlit'
     }
     
     missing_packages = []

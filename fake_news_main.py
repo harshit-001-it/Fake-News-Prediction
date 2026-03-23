@@ -8,7 +8,7 @@ import string
 import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
+from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
@@ -144,6 +144,19 @@ def main():
 
     print("Concatenating and cleaning data...")
     df_master = pd.concat(all_dfs, ignore_index=True)
+    
+    # Normalize labels: Ensure all are int (0 or 1)
+    # Handle cases where labels might be 'REAL'/'FAKE' strings or int/str 0/1
+    label_map = {
+        'REAL': 1, 'FAKE': 0, 'real': 1, 'fake': 0, 
+        'TRUE': 1, 'FALSE': 0, 'true': 1, 'false': 0,
+        '1': 1, '0': 0, 1: 1, 0: 0
+    }
+    df_master['label'] = df_master['label'].map(label_map).fillna(df_master['label'])
+    df_master['label'] = pd.to_numeric(df_master['label'], errors='coerce')
+    df_master = df_master.dropna(subset=['label'])
+    df_master['label'] = df_master['label'].astype(int)
+    
     df_master['text'] = df_master['text'].astype(str).apply(wordopt)
     df_master = df_master[df_master['text'].str.strip() != '']
     
@@ -164,9 +177,9 @@ def main():
     xv_train = vectorizer.fit_transform(x_train)
     xv_test = vectorizer.transform(x_test)
     
-    # Passive Aggressive tends to be best for this type of task
-    print("Training Best-Fit Model (Passive Aggressive Classifier)...")
-    model = PassiveAggressiveClassifier(max_iter=1000)
+    # SGDClassifier with 'hinge' loss behaves like a linear SVM/PAC
+    print("Training Best-Fit Model (SGD Classifier)...")
+    model = SGDClassifier(loss='hinge', penalty=None, learning_rate='optimal', max_iter=1000, random_state=42)
     model.fit(xv_train, y_train)
     
     pred = model.predict(xv_test)
